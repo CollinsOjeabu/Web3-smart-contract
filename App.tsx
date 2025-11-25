@@ -1,0 +1,34 @@
+import React from 'react';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Web3Provider } from './context/Web3Context';
+import { Layout } from './components/Layout';
+
+// Pages
+import { Dashboard } from './pages/Dashboard';
+import { ShipmentsPage } from './pages/Shipments';
+import { CreateShipment } from './pages/CreateShipment';
+import { TrackingPage } from './pages/Tracking';
+import { KYCPage } from './pages/KYC';
+import { AdminPage } from './pages/Admin';
+
+const App: React.FC = () => {
+  return (
+    <Web3Provider>
+      <HashRouter>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/shipments" element={<ShipmentsPage />} />
+            <Route path="/create" element={<CreateShipment />} />
+            <Route path="/tracking" element={<TrackingPage />} />
+            <Route path="/kyc" element={<KYCPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+      </HashRouter>
+    </Web3Provider>
+  );
+};
+
+export default App;
