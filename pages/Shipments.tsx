@@ -1,14 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { useWeb3 } from '../context/Web3Context';
-import { Shipment, ShipmentStatus } from '../types';
+import { Shipment, ShipmentStatus, UserRole } from '../types';
 import * as BlockchainService from '../services/blockchain';
 import { Link } from 'react-router-dom';
 import { Package, Truck, ArrowRight, ArrowLeft, Filter, Search } from 'lucide-react';
 
 export const ShipmentsPage: React.FC = () => {
-  const { account } = useWeb3();
+  const { account, userProfile } = useWeb3();
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'SENT' | 'RECEIVED' | 'COURIER'>('ALL');
+
+  useEffect(() => {
+     if(userProfile?.role === UserRole.SELLER) setFilter('SENT');
+     else if(userProfile?.role === UserRole.BUYER) setFilter('RECEIVED');
+     else if(userProfile?.role === UserRole.COURIER) setFilter('COURIER');
+     else setFilter('ALL');
+  }, [userProfile]);
 
   useEffect(() => {
     const fetch = async () => {
@@ -45,8 +52,10 @@ export const ShipmentsPage: React.FC = () => {
     <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-                <h1 className="text-2xl font-bold text-white">My Shipments</h1>
-                <p className="text-slate-400 text-sm mt-1">Manage and track your ongoing logistics.</p>
+                <h1 className="text-2xl font-bold text-white">
+                    {userProfile?.role === UserRole.SELLER ? 'Sales Orders' : userProfile?.role === UserRole.BUYER ? 'My Purchases' : 'Shipments'}
+                </h1>
+                <p className="text-slate-400 text-sm mt-1">Manage and track your logistics.</p>
             </div>
             
             <div className="flex bg-[#151A23] rounded-xl p-1 shadow-sm border border-white/5">
@@ -69,13 +78,6 @@ export const ShipmentsPage: React.FC = () => {
                     <Filter size={16} className="mr-2" />
                     <span>Filtering by: <span className="text-white font-medium">{filter}</span></span>
                 </div>
-                <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"/>
-                    <input 
-                        placeholder="Search list..." 
-                        className="bg-[#0B0E14] border border-white/10 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                    />
-                </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -85,7 +87,7 @@ export const ShipmentsPage: React.FC = () => {
                             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">ID</th>
                             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Item Details</th>
                             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Value</th>
-                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Your Role</th>
+                            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Participant</th>
                             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right">Action</th>
                         </tr>
@@ -109,9 +111,18 @@ export const ShipmentsPage: React.FC = () => {
                                 </td>
                                 <td className="px-6 py-4 text-sm font-medium text-slate-300">{s.price} ETH</td>
                                 <td className="px-6 py-4">
-                                    {s.sender === account && <span className="flex items-center text-xs text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded w-fit"><ArrowRight size={12} className="mr-1"/> Sender</span>}
-                                    {s.receiver === account && <span className="flex items-center text-xs text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded w-fit"><ArrowLeft size={12} className="mr-1"/> Receiver</span>}
-                                    {s.courier === account && <span className="flex items-center text-xs text-orange-400 bg-orange-500/10 px-2 py-1 rounded w-fit"><Truck size={12} className="mr-1"/> Courier</span>}
+                                    {/* Logic to show the OTHER party */}
+                                    {s.sender === account ? (
+                                        <div>
+                                            <p className="text-[10px] text-slate-500 uppercase">Buyer</p>
+                                            <p className="font-mono text-xs text-white">{s.receiver.substring(0,8)}...</p>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <p className="text-[10px] text-slate-500 uppercase">Seller</p>
+                                            <p className="font-mono text-xs text-white">{s.sender.substring(0,8)}...</p>
+                                        </div>
+                                    )}
                                 </td>
                                 <td className="px-6 py-4">
                                     <StatusBadge status={s.status} />

@@ -9,17 +9,19 @@ import {
   Settings, 
   Menu, 
   X, 
-  LogOut, 
   Wallet,
   Bell,
   Search,
   User,
-  Sun
+  Sun,
+  ShoppingBag,
+  Store,
+  Truck
 } from 'lucide-react';
 import { UserRole } from '../types';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isConnected, connect, disconnect, account, userProfile, notifications, setDevRole } = useWeb3();
+  const { isConnected, connect, disconnect, account, balance, userProfile, notifications, setDevRole } = useWeb3();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
 
@@ -43,6 +45,17 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     </Link>
   );
 
+  const getRoleLabel = () => {
+    if(!userProfile) return 'Guest';
+    switch(userProfile.role) {
+        case UserRole.ADMIN: return 'Administrator';
+        case UserRole.SELLER: return 'Merchant / Seller';
+        case UserRole.COURIER: return 'Logistics Partner';
+        case UserRole.BUYER: return 'Customer';
+        default: return 'User';
+    }
+  }
+
   return (
     <div className="flex h-screen bg-[#0B0E14] overflow-hidden">
       {/* Sidebar */}
@@ -54,7 +67,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
             <div>
                 <span className="block text-xl font-bold tracking-tight text-white">SupplyChain</span>
-                <span className="block text-[10px] text-slate-500 font-medium uppercase tracking-wider">Decentralized Logistics</span>
+                <span className="block text-[10px] text-slate-500 font-medium uppercase tracking-wider">Decentralized</span>
             </div>
           </div>
           <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-slate-400 ml-auto">
@@ -63,16 +76,44 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </div>
 
         <nav className="p-4 space-y-2 mt-2">
+          {/* Common */}
           <NavItem path="/" icon={LayoutDashboard} label="Dashboard" />
-          <NavItem path="/shipments" icon={Package} label="My Shipments" />
-          <NavItem path="/create" icon={Send} label="Create Shipment" />
-          <NavItem path="/tracking" icon={Search} label="Tracking" />
+
+          {/* Role: BUYER */}
+          {(userProfile?.role === UserRole.BUYER || !isConnected) && (
+            <>
+                <NavItem path="/catalog" icon={ShoppingBag} label="Browse Catalog" />
+                <NavItem path="/shipments" icon={Package} label="My Orders" />
+                <NavItem path="/tracking" icon={Search} label="Track Order" />
+            </>
+          )}
+
+          {/* Role: SELLER */}
+          {userProfile?.role === UserRole.SELLER && (
+             <>
+                <NavItem path="/seller-studio" icon={Store} label="Seller Studio" />
+                <NavItem path="/shipments" icon={Package} label="Sales Orders" />
+                <NavItem path="/tracking" icon={Search} label="Track Shipment" />
+             </>
+          )}
+
+          {/* Role: COURIER */}
+          {userProfile?.role === UserRole.COURIER && (
+             <>
+                <NavItem path="/shipments" icon={Truck} label="Assigned Jobs" />
+                <NavItem path="/tracking" icon={Search} label="Update Status" />
+             </>
+          )}
+
+          {/* Common: KYC */}
           <NavItem path="/kyc" icon={ShieldCheck} label="KYC Verification" />
-          
+
+          {/* Role: ADMIN */}
           {userProfile?.role === UserRole.ADMIN && (
              <div className="pt-6 mt-4 border-t border-white/5">
                 <p className="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Administrator</p>
-                <NavItem path="/admin" icon={Settings} label="Admin Panel" />
+                <NavItem path="/admin" icon={Settings} label="Admin Console" />
+                <NavItem path="/shipments" icon={Package} label="All Shipments" />
              </div>
           )}
         </nav>
@@ -83,15 +124,16 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center space-x-2">
                         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                        <p className="text-xs text-slate-400 font-medium">Network Status</p>
+                        <p className="text-xs text-slate-400 font-medium">{getRoleLabel()}</p>
                     </div>
-                    <span className="text-[10px] bg-white/5 text-slate-300 px-2 py-0.5 rounded border border-white/5">Localhost</span>
+                    <span className="text-[10px] bg-white/5 text-slate-300 px-2 py-0.5 rounded border border-white/5">DevMode</span>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-2 p-1 bg-black/20 rounded-lg">
-                    <button onClick={() => setDevRole(UserRole.USER)} className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.USER ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>User</button>
-                    <button onClick={() => setDevRole(UserRole.COURIER)} className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.COURIER ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>Courier</button>
-                    <button onClick={() => setDevRole(UserRole.ADMIN)} className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.ADMIN ? 'bg-red-500 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>Admin</button>
+                <div className="grid grid-cols-4 gap-1 p-1 bg-black/20 rounded-lg">
+                    <button onClick={() => setDevRole(UserRole.BUYER)} title="Buyer" className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.BUYER ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Buy</button>
+                    <button onClick={() => setDevRole(UserRole.SELLER)} title="Seller" className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.SELLER ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-white'}`}>Sell</button>
+                    <button onClick={() => setDevRole(UserRole.COURIER)} title="Courier" className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.COURIER ? 'bg-orange-600 text-white' : 'text-slate-500 hover:text-white'}`}>Del</button>
+                    <button onClick={() => setDevRole(UserRole.ADMIN)} title="Admin" className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.ADMIN ? 'bg-red-600 text-white' : 'text-slate-500 hover:text-white'}`}>Adm</button>
                 </div>
             </div>
         )}
@@ -99,10 +141,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
-        {/* Background Glows */}
         <div className="absolute top-0 left-0 w-full h-96 bg-indigo-900/10 blur-[100px] pointer-events-none -z-10"></div>
         
-        {/* Header */}
         <header className="h-24 flex items-center justify-between px-6 lg:px-8 z-10">
           <div className="flex items-center lg:hidden">
              <button onClick={() => setIsMobileMenuOpen(true)} className="text-slate-400 mr-4">
@@ -122,10 +162,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     className="bg-[#151A23] border border-white/5 text-sm rounded-xl pl-10 pr-4 py-3 w-full text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all shadow-sm"
                 />
              </div>
-             {/* Fake 'Test Notification' button to match screenshot vibe */}
-             <button onClick={() => {}} className="ml-4 whitespace-nowrap px-4 py-2 bg-[#1A1F2E] hover:bg-[#23293a] text-xs font-medium text-indigo-400 rounded-lg border border-indigo-500/20 transition-colors">
-                Add Test Notification
-             </button>
           </div>
 
           <div className="flex items-center space-x-5">
@@ -144,22 +180,18 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
             <div className="h-8 w-[1px] bg-white/10 mx-2"></div>
 
-            {/* Wallet Connection */}
             {isConnected ? (
               <div className="flex items-center pl-1 pr-1 py-1 rounded-full bg-[#151A23] border border-white/5 shadow-lg">
                  <div className="px-3 flex flex-col items-end mr-2">
                      <span className="text-xs font-bold text-white tracking-wide font-mono">{account?.substring(0, 6)}...{account?.substring(account.length - 4)}</span>
-                     <span className="text-[10px] text-slate-400">9,917.9 ETH</span>
+                     <span className="text-[10px] text-slate-400">{balance.toFixed(4)} ETH</span>
                  </div>
                  <button onClick={disconnect} className="h-9 w-9 rounded-full bg-gradient-to-r from-fuchsia-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50 transition-all">
                      <User size={16} />
                  </button>
               </div>
             ) : (
-              <button
-                onClick={connect}
-                className="flex items-center space-x-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-6 py-3 rounded-full font-semibold text-sm transition-all shadow-lg shadow-indigo-500/25"
-              >
+              <button onClick={connect} className="flex items-center space-x-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-6 py-3 rounded-full font-semibold text-sm transition-all shadow-lg shadow-indigo-500/25">
                 <Wallet size={18} />
                 <span>Connect Wallet</span>
               </button>
@@ -167,7 +199,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
         </header>
 
-        {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-6 lg:px-8 pb-20 scroll-smooth">
             <div className="max-w-7xl mx-auto">
                 {children}

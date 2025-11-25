@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useWeb3 } from '../context/Web3Context';
-import { Shipment, ShipmentStatus } from '../types';
+import { Shipment, ShipmentStatus, PaymentStatus } from '../types';
 import * as BlockchainService from '../services/blockchain';
-import { MapPin, Package, Clock, CheckCircle, Search, Navigation } from 'lucide-react';
+import { MapPin, Package, Clock, CheckCircle, Search, Navigation, Lock, Unlock, DollarSign, Wallet, RotateCcw } from 'lucide-react';
 
 export const TrackingPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { account } = useWeb3();
+  const { account, refreshData } = useWeb3();
   const [searchId, setSearchId] = useState(searchParams.get('id') || '');
   const [shipment, setShipment] = useState<Shipment | null>(null);
   const [loading, setLoading] = useState(false);
@@ -41,7 +41,8 @@ export const TrackingPage: React.FC = () => {
   const handleUpdate = async () => {
     if (!shipment) return;
     await BlockchainService.updateShipmentStatus(shipment.id, updateStatus, updateLoc, updateMsg);
-    fetchShipment(shipment.id);
+    await fetchShipment(shipment.id);
+    await refreshData(); // Refresh wallet balance if funds moved
     setUpdateLoc('');
     setUpdateMsg('');
   };
@@ -78,6 +79,8 @@ export const TrackingPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-8 duration-500">
             {/* Left: Details */}
             <div className="lg:col-span-2 space-y-6">
+                
+                {/* Status & Basic Info */}
                 <div className="bg-[#151A23] p-8 rounded-2xl shadow-lg border border-white/5">
                     <div className="flex justify-between items-start mb-8">
                         <div>
@@ -86,6 +89,7 @@ export const TrackingPage: React.FC = () => {
                         </div>
                         <div className={`px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-wide border ${
                             shipment.status === 'DELIVERED' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 
+                            shipment.status === 'CANCELLED' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
                             'bg-blue-500/10 text-blue-500 border-blue-500/20'
                         }`}>
                             {shipment.status.replace(/_/g, ' ')}
@@ -124,7 +128,7 @@ export const TrackingPage: React.FC = () => {
                 </div>
 
                 {/* Courier Actions */}
-                {isCourier && shipment.status !== ShipmentStatus.DELIVERED && (
+                {isCourier && shipment.status !== ShipmentStatus.DELIVERED && shipment.status !== ShipmentStatus.CANCELLED && (
                     <div className="bg-[#151A23] p-6 rounded-2xl shadow-lg border border-indigo-500/30 relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
                         <h3 className="font-bold text-white mb-4 flex items-center"><Package className="mr-2 text-indigo-400"/> Update Status (Courier)</h3>
@@ -137,7 +141,8 @@ export const TrackingPage: React.FC = () => {
                             >
                                 <option value={ShipmentStatus.IN_TRANSIT}>In Transit</option>
                                 <option value={ShipmentStatus.OUT_FOR_DELIVERY}>Out For Delivery</option>
-                                <option value={ShipmentStatus.DELIVERED}>Delivered</option>
+                                <option value={ShipmentStatus.DELIVERED}>Delivered & Release Funds</option>
+                                <option value={ShipmentStatus.CANCELLED}>Cancel & Refund</option>
                             </select>
                             <input 
                                 className="w-full bg-[#0B0E14] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500" 
@@ -152,25 +157,66 @@ export const TrackingPage: React.FC = () => {
                             value={updateMsg}
                             onChange={e=>setUpdateMsg(e.target.value)}
                         />
-                        <button onClick={handleUpdate} className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-xl w-full font-bold shadow-lg shadow-indigo-500/20 hover:opacity-90">Update Shipment Status</button>
+                        <button onClick={handleUpdate} className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-xl w-full font-bold shadow-lg shadow-indigo-500/20 hover:opacity-90">
+                            Update Shipment Status
+                        </button>
                     </div>
                 )}
             </div>
 
             {/* Right: Info */}
             <div className="space-y-6">
+                
+                {/* Smart Contract / Escrow Panel */}
+                <div className="bg-[#151A23] p-6 rounded-2xl shadow-lg border border-white/5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+                    
+                    <h3 className="font-bold text-white mb-6 text-sm uppercase tracking-wider flex items-center">
+                        <DollarSign size={16} className="text-emerald-400 mr-2"/> 
+                        Smart Contract Escrow
+                    </h3>
+                    
+                    <div className="text-center py-4">
+                        <span className="text-3xl font-bold text-white">{shipment.price} ETH</span>
+                        <p className="text-xs text-slate-400 mt-1">Contract Value</p>
+                    </div>
+
+                    <div className="mt-4 bg-[#0B0E14] rounded-xl p-4 border border-white/5">
+                        <div className="flex items-center justify-between mb-2">
+                             <span className="text-xs font-bold text-slate-500 uppercase">Payment Status</span>
+                             {shipment.paymentStatus === PaymentStatus.RELEASED && (
+                                 <span className="text-xs font-bold text-emerald-400 flex items-center"><CheckCircle size={12} className="mr-1"/> RELEASED</span>
+                             )}
+                             {shipment.paymentStatus === PaymentStatus.REFUNDED && (
+                                 <span className="text-xs font-bold text-red-400 flex items-center"><RotateCcw size={12} className="mr-1"/> REFUNDED</span>
+                             )}
+                             {shipment.paymentStatus === PaymentStatus.LOCKED && (
+                                 <span className="text-xs font-bold text-orange-400 flex items-center"><Lock size={12} className="mr-1"/> LOCKED</span>
+                             )}
+                        </div>
+                        <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-3">
+                            <div className={`h-full transition-all duration-1000 ${
+                                shipment.paymentStatus === PaymentStatus.RELEASED ? 'bg-emerald-500 w-full' : 
+                                shipment.paymentStatus === PaymentStatus.REFUNDED ? 'bg-red-500 w-full' :
+                                'bg-orange-500 w-1/2'
+                            }`}></div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-3 text-center">
+                            {shipment.paymentStatus === PaymentStatus.RELEASED 
+                                ? "Funds have been automatically released to the Courier wallet." 
+                                : shipment.paymentStatus === PaymentStatus.REFUNDED
+                                ? "Funds have been refunded to the payer's wallet."
+                                : "Funds are currently held in the smart contract until delivery is confirmed."}
+                        </p>
+                    </div>
+                </div>
+
                 <div className="bg-[#151A23] p-6 rounded-2xl shadow-lg border border-white/5">
                     <h3 className="font-bold text-white mb-6 text-sm uppercase tracking-wider">Package Details</h3>
                     <div className="space-y-4 text-sm">
                         <DetailRow label="Weight" value={`${shipment.weight} kg`} />
-                        <DetailRow label="Dimensions" value="10x10x10 cm" />
                         <DetailRow label="Category" value={shipment.category} />
-                        <div className="pt-4 border-t border-white/5">
-                             <div className="flex justify-between items-center">
-                                <span className="text-slate-500">Total Value</span>
-                                <span className="font-bold text-xl text-white">{shipment.price} ETH</span>
-                             </div>
-                        </div>
+                        <DetailRow label="Title" value={shipment.title} />
                     </div>
                 </div>
             </div>

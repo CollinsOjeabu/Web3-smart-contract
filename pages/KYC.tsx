@@ -4,7 +4,7 @@ import { KYCStatus, UserProfile } from '../types';
 import * as BlockchainService from '../services/blockchain';
 import { ShieldCheck, Upload, AlertCircle, CheckCircle, Clock, Lock } from 'lucide-react';
 
-const Label = ({children}: {children: React.ReactNode}) => <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 ml-1">{children}</label>
+const Label = ({children}: {children?: React.ReactNode}) => <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 ml-1">{children}</label>
 
 const Input = (props: any) => (
     <input className={`w-full bg-[#0B0E14] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all placeholder-slate-600 ${props.className}`} {...props} />

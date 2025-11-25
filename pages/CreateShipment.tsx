@@ -3,9 +3,9 @@ import { useWeb3 } from '../context/Web3Context';
 import { KYCStatus } from '../types';
 import * as BlockchainService from '../services/blockchain';
 import { useNavigate } from 'react-router-dom';
-import { Truck, Package, Calendar, DollarSign, UploadCloud, Check, ChevronRight } from 'lucide-react';
+import { Truck, Package, Calendar, DollarSign, UploadCloud, Check, ChevronRight, Lock } from 'lucide-react';
 
-const Label = ({children}: {children: React.ReactNode}) => <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 ml-1">{children}</label>
+const Label = ({children}: {children?: React.ReactNode}) => <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 ml-1">{children}</label>
 
 const Input = (props: any) => (
     <input className={`w-full bg-[#0B0E14] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all placeholder-slate-600 ${props.className}`} {...props} />
@@ -23,7 +23,7 @@ const ReviewRow = ({ label, value, isMono, isHighlight }: any) => (
 )
 
 export const CreateShipment: React.FC = () => {
-  const { userProfile, account } = useWeb3();
+  const { userProfile, account, refreshData } = useWeb3();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
@@ -74,9 +74,10 @@ export const CreateShipment: React.FC = () => {
             pickupDate: data.pickupDate,
             deliveryDate: data.deliveryDate
         });
+        await refreshData();
         navigate('/shipments');
-    } catch (e) {
-        alert('Error creating shipment');
+    } catch (e: any) {
+        alert('Transaction Failed: ' + e);
     } finally {
         setLoading(false);
     }
@@ -200,7 +201,16 @@ export const CreateShipment: React.FC = () => {
 
             {step === 4 && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                    <h2 className="text-xl font-bold text-white mb-6">Review & Confirm</h2>
+                    <h2 className="text-xl font-bold text-white mb-6">Review & Confirm Transaction</h2>
+                    
+                    <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 flex items-start gap-3 mb-6">
+                        <Lock className="text-orange-400 shrink-0 mt-0.5" size={18} />
+                        <div>
+                            <h4 className="text-sm font-bold text-orange-400">Smart Contract Escrow</h4>
+                            <p className="text-xs text-orange-200/80 mt-1">Upon creation, <span className="font-bold text-white">{data.price} ETH</span> will be deducted from your wallet and locked in the smart contract. These funds will be automatically released to the Courier/Seller once the status is updated to Delivered.</p>
+                        </div>
+                    </div>
+
                     <div className="bg-[#0B0E14] p-6 rounded-xl border border-white/5 space-y-4 text-sm">
                         <ReviewRow label="Title" value={data.title} />
                         <ReviewRow label="Receiver" value={data.receiver} isMono />
@@ -223,7 +233,7 @@ export const CreateShipment: React.FC = () => {
                      </button>
                 ) : (
                      <button onClick={handleSubmit} disabled={loading} className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white px-10 py-3 rounded-xl font-bold transition-all shadow-lg shadow-emerald-500/20">
-                        {loading ? 'Processing Transaction...' : 'Create Shipment Contract'}
+                        {loading ? 'Processing Transaction...' : 'Pay & Create Contract'}
                      </button>
                 )}
             </div>

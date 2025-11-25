@@ -4,6 +4,7 @@ import { UserProfile, UserRole, KYCStatus, Notification } from '../types';
 
 interface Web3ContextType {
   account: string | null;
+  balance: number;
   isConnected: boolean;
   userProfile: UserProfile | null;
   notifications: Notification[];
@@ -19,6 +20,7 @@ const Web3Context = createContext<Web3ContextType | undefined>(undefined);
 
 export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [account, setAccount] = useState<string | null>(null);
+  const [balance, setBalance] = useState<number>(0);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -31,6 +33,8 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       let profile = await BlockchainService.getUserProfile(account);
+      const bal = await BlockchainService.getBalance(account);
+      setBalance(bal);
       
       // If user doesn't exist yet, create a partial one for UI state
       if (!profile) {
@@ -38,7 +42,7 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
             walletAddress: account,
             name: 'New User',
             email: '',
-            role: UserRole.USER,
+            role: UserRole.BUYER, // Default to Buyer
             kycStatus: KYCStatus.NOT_STARTED
         };
       }
@@ -61,8 +65,6 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const wallet = await BlockchainService.connectWallet();
       setAccount(wallet);
-      // Determine if admin
-      // In a real app, hardcoded admin check
       if (wallet.includes('ADMIN')) { 
         setDevRoleOverride(UserRole.ADMIN);
       }
@@ -77,6 +79,8 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     setAccount(null);
     setUserProfile(null);
     setNotifications([]);
+    setBalance(0);
+    setDevRoleOverride(null);
   };
 
   useEffect(() => {
@@ -88,6 +92,7 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <Web3Context.Provider value={{
       account,
+      balance,
       isConnected: !!account,
       userProfile,
       notifications,

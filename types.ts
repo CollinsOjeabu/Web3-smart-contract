@@ -1,6 +1,7 @@
 export enum UserRole {
   GUEST = 'GUEST',
-  USER = 'USER', // Can be Sender/Receiver
+  BUYER = 'BUYER', // Standard customer
+  SELLER = 'SELLER', // Merchant
   COURIER = 'COURIER',
   ADMIN = 'ADMIN'
 }
@@ -20,6 +21,13 @@ export enum ShipmentStatus {
   CANCELLED = 'CANCELLED'
 }
 
+export enum PaymentStatus {
+  PENDING = 'PENDING', // Before creation
+  LOCKED = 'LOCKED', // Funds held in smart contract
+  RELEASED = 'RELEASED', // Funds transferred to courier/seller
+  REFUNDED = 'REFUNDED' // Funds returned to buyer
+}
+
 export interface UserProfile {
   walletAddress: string;
   name: string;
@@ -32,16 +40,27 @@ export interface UserProfile {
   };
 }
 
+export interface MarketplaceItem {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  image: string;
+  seller: string; // Wallet Address
+  category: string;
+}
+
 export interface Shipment {
   id: string; // Unique ID
-  sender: string; // Wallet Address
-  receiver: string; // Wallet Address
+  sender: string; // Wallet Address (Seller)
+  receiver: string; // Wallet Address (Buyer)
   courier: string; // Wallet Address
   title: string;
   description: string;
   category: string;
   weight: number;
   price: number;
+  paymentStatus: PaymentStatus;
   pickupDate: string;
   deliveryDate: string;
   status: ShipmentStatus;
@@ -70,4 +89,8 @@ export interface DashboardStats {
   activeShipments: number;
   pendingKYC: number;
   completedShipments: number;
+  // Role specific
+  revenue?: number;
+  spent?: number;
+  inventoryCount?: number;
 }
