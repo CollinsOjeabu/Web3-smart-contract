@@ -1,9 +1,9 @@
+
 import React, { useState } from 'react';
 import { useWeb3 } from '../context/Web3Context';
-import { KYCStatus } from '../types';
 import * as BlockchainService from '../services/blockchain';
 import { useNavigate } from 'react-router-dom';
-import { Truck, Package, Calendar, DollarSign, UploadCloud, Check, ChevronRight, Lock } from 'lucide-react';
+import { Truck, Package, DollarSign, UploadCloud, Check, ChevronRight, Lock } from 'lucide-react';
 
 const Label = ({children}: {children?: React.ReactNode}) => <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 ml-1">{children}</label>
 
@@ -23,7 +23,7 @@ const ReviewRow = ({ label, value, isMono, isHighlight }: any) => (
 )
 
 export const CreateShipment: React.FC = () => {
-  const { userProfile, account, refreshData } = useWeb3();
+  const { account, refreshData } = useWeb3();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
@@ -41,19 +41,6 @@ export const CreateShipment: React.FC = () => {
     dim: '10x10x10',
     type: 'Standard'
   });
-
-  if (userProfile?.kycStatus !== KYCStatus.VERIFIED) {
-    return (
-        <div className="flex flex-col items-center justify-center h-[50vh] text-center p-8 bg-[#151A23] rounded-2xl border border-white/5 m-4">
-             <div className="h-20 w-20 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-6 border border-red-500/20">
-                <Check size={40} />
-             </div>
-             <h2 className="text-3xl font-bold text-white mb-2">KYC Required</h2>
-             <p className="text-slate-400 mb-8 max-w-md">You must complete the Know Your Customer (KYC) verification process before you can create shipments on the blockchain.</p>
-             <button onClick={() => navigate('/kyc')} className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-red-600/20">Verify Identity Now</button>
-        </div>
-    );
-  }
 
   const handleNext = () => setStep(step + 1);
   const handleBack = () => setStep(step - 1);
@@ -121,11 +108,11 @@ export const CreateShipment: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <Label>Shipment Title</Label>
-                            <Input value={data.title} onChange={e=>setData({...data, title: e.target.value})} placeholder="e.g. Electronics Batch A" />
+                            <Input value={data.title} onChange={(e: any)=>setData({...data, title: e.target.value})} placeholder="e.g. Electronics Batch A" />
                         </div>
                          <div>
                             <Label>Category</Label>
-                            <Select value={data.category} onChange={e=>setData({...data, category: e.target.value})}>
+                            <Select value={data.category} onChange={(e: any)=>setData({...data, category: e.target.value})}>
                                 <option>General</option>
                                 <option>Electronics</option>
                                 <option>Perishable</option>
@@ -138,7 +125,7 @@ export const CreateShipment: React.FC = () => {
                         </div>
                         <div>
                             <Label>Shipment Type</Label>
-                            <Select value={data.type} onChange={e=>setData({...data, type: e.target.value})}>
+                            <Select value={data.type} onChange={(e: any)=>setData({...data, type: e.target.value})}>
                                 <option>Standard</option>
                                 <option>Express</option>
                                 <option>Overnight</option>
@@ -153,20 +140,20 @@ export const CreateShipment: React.FC = () => {
                     <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-6"><Truck className="text-cyan-400"/> Addresses & Dates</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="md:col-span-2">
-                            <Label>Receiver Wallet Address (KYC Verified)</Label>
-                            <Input className="font-mono text-cyan-300" placeholder="0x..." value={data.receiver} onChange={e=>setData({...data, receiver: e.target.value})} />
+                            <Label>Receiver Wallet Address</Label>
+                            <Input className="font-mono text-cyan-300" placeholder="0x..." value={data.receiver} onChange={(e: any)=>setData({...data, receiver: e.target.value})} />
                         </div>
                         <div className="md:col-span-2">
                             <Label>Courier Wallet Address</Label>
-                            <Input className="font-mono text-cyan-300" placeholder="0x..." value={data.courier} onChange={e=>setData({...data, courier: e.target.value})} />
+                            <Input className="font-mono text-cyan-300" placeholder="0x..." value={data.courier} onChange={(e: any)=>setData({...data, courier: e.target.value})} />
                         </div>
                         <div>
                             <Label>Pickup Date</Label>
-                            <Input type="date" value={data.pickupDate} onChange={e=>setData({...data, pickupDate: e.target.value})} />
+                            <Input type="date" value={data.pickupDate} onChange={(e: any)=>setData({...data, pickupDate: e.target.value})} />
                         </div>
                          <div>
                             <Label>Estimated Delivery</Label>
-                            <Input type="date" value={data.deliveryDate} onChange={e=>setData({...data, deliveryDate: e.target.value})} />
+                            <Input type="date" value={data.deliveryDate} onChange={(e: any)=>setData({...data, deliveryDate: e.target.value})} />
                         </div>
                     </div>
                 </div>
@@ -178,15 +165,15 @@ export const CreateShipment: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <Label>Weight (kg)</Label>
-                            <Input type="number" value={data.weight} onChange={e=>setData({...data, weight: e.target.value})} />
+                            <Input type="number" value={data.weight} onChange={(e: any)=>setData({...data, weight: e.target.value})} />
                         </div>
                         <div>
                             <Label>Dimensions (cm)</Label>
-                            <Input type="text" placeholder="L x W x H" value={data.dim} onChange={e=>setData({...data, dim: e.target.value})} />
+                            <Input type="text" placeholder="L x W x H" value={data.dim} onChange={(e: any)=>setData({...data, dim: e.target.value})} />
                         </div>
                          <div>
                             <Label>Price (ETH)</Label>
-                            <Input type="number" step="0.001" value={data.price} onChange={e=>setData({...data, price: e.target.value})} />
+                            <Input type="number" step="0.001" value={data.price} onChange={(e: any)=>setData({...data, price: e.target.value})} />
                         </div>
                     </div>
                     <div className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-white/5 hover:border-cyan-500/30 transition-all group">

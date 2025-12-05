@@ -1,16 +1,14 @@
+
 import React, { useEffect, useState } from 'react';
 import { useWeb3 } from '../context/Web3Context';
 import { 
-  TrendingUp, 
   Package, 
-  Shield,
   ArrowRight,
   Zap,
   DollarSign,
   Activity,
   ShoppingBag,
-  Store,
-  CreditCard
+  Store
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import * as BlockchainService from '../services/blockchain';
@@ -22,7 +20,6 @@ export const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalShipments: 0,
     activeShipments: 0,
-    pendingKYC: 0,
     completedShipments: 0,
     revenue: 0,
     spent: 0
@@ -31,7 +28,6 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     const fetchStats = async () => {
       const shipments = await BlockchainService.getAllShipments();
-      const users = await BlockchainService.getAllUsers();
       
       let relevantShipments = shipments;
       let revenue = 0;
@@ -51,12 +47,10 @@ export const Dashboard: React.FC = () => {
 
       const active = relevantShipments.filter(s => s.status !== ShipmentStatus.DELIVERED && s.status !== ShipmentStatus.CANCELLED).length;
       const completed = relevantShipments.filter(s => s.status === ShipmentStatus.DELIVERED).length;
-      const pendingKYC = users.filter(u => u.kycStatus === 'PENDING').length;
 
       setStats({
         totalShipments: relevantShipments.length,
         activeShipments: active,
-        pendingKYC: pendingKYC,
         completedShipments: completed,
         revenue,
         spent
@@ -104,17 +98,6 @@ export const Dashboard: React.FC = () => {
             <p className="text-slate-400 mt-2">
                 {isSeller ? 'Manage your sales and inventory.' : 'Track your orders and purchases.'}
             </p>
-        </div>
-        
-        <div className={`px-5 py-3 rounded-xl border ${userProfile?.kycStatus === 'VERIFIED' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-orange-500/10 border-orange-500/20'} flex items-center`}>
-             <div className={`p-1.5 rounded-full mr-3 ${userProfile?.kycStatus === 'VERIFIED' ? 'bg-emerald-500' : 'bg-orange-500'}`}>
-                <Shield size={14} className="text-white"/>
-             </div>
-             <div>
-                 <p className={`text-xs font-bold uppercase tracking-wider ${userProfile?.kycStatus === 'VERIFIED' ? 'text-emerald-400' : 'text-orange-400'}`}>
-                    {userProfile?.kycStatus === 'VERIFIED' ? 'KYC Verified' : 'KYC Pending'}
-                 </p>
-             </div>
         </div>
       </div>
 
@@ -245,6 +228,10 @@ export const Dashboard: React.FC = () => {
 
 const TruckIcon = (props: any) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><rect width="16" height="13" x="2" y="5" rx="2" ry="2"/><path d="M18 5v3h3v3l-2.06 1.03"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+)
+
+const Shield = (props: any) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
 )
 
 const StatCard = ({ title, value, unit, icon: Icon, trend, bgIcon, shadow }: any) => (

@@ -1,3 +1,4 @@
+
 export enum UserRole {
   GUEST = 'GUEST',
   BUYER = 'BUYER', // Standard customer
@@ -33,7 +34,7 @@ export interface UserProfile {
   name: string;
   email: string;
   role: UserRole;
-  kycStatus: KYCStatus;
+  kycStatus?: KYCStatus;
   kycDocuments?: {
     idDoc: string;
     addressProof: string;
@@ -87,7 +88,6 @@ export interface Notification {
 export interface DashboardStats {
   totalShipments: number;
   activeShipments: number;
-  pendingKYC: number;
   completedShipments: number;
   // Role specific
   revenue?: number;

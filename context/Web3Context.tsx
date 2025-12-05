@@ -1,6 +1,7 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as BlockchainService from '../services/blockchain';
-import { UserProfile, UserRole, KYCStatus, Notification } from '../types';
+import { UserProfile, UserRole, Notification } from '../types';
 
 interface Web3ContextType {
   account: string | null;
@@ -42,8 +43,7 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
             walletAddress: account,
             name: 'New User',
             email: '',
-            role: UserRole.BUYER, // Default to Buyer
-            kycStatus: KYCStatus.NOT_STARTED
+            role: UserRole.BUYER // Default to Buyer
         };
       }
 
@@ -65,9 +65,6 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const wallet = await BlockchainService.connectWallet();
       setAccount(wallet);
-      if (wallet.includes('ADMIN')) { 
-        setDevRoleOverride(UserRole.ADMIN);
-      }
     } catch (error) {
       console.error("Connection failed", error);
     } finally {

@@ -3,12 +3,13 @@ import { useWeb3 } from '../context/Web3Context';
 import { Shipment, ShipmentStatus, UserRole } from '../types';
 import * as BlockchainService from '../services/blockchain';
 import { Link } from 'react-router-dom';
-import { Package, Truck, ArrowRight, ArrowLeft, Filter, Search } from 'lucide-react';
+import { Package, Truck, ArrowRight, ArrowLeft, Filter, Search, CheckCircle } from 'lucide-react';
 
 export const ShipmentsPage: React.FC = () => {
   const { account, userProfile } = useWeb3();
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'SENT' | 'RECEIVED' | 'COURIER'>('ALL');
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
 
   useEffect(() => {
      if(userProfile?.role === UserRole.SELLER) setFilter('SENT');
@@ -18,7 +19,10 @@ export const ShipmentsPage: React.FC = () => {
   }, [userProfile]);
 
   useEffect(() => {
-    const fetch = async () => {
+    fetchShipments();
+  }, [account, filter]);
+
+  const fetchShipments = async () => {
         const all = await BlockchainService.getAllShipments();
         let filtered = all;
         if (!account) return;
@@ -29,9 +33,19 @@ export const ShipmentsPage: React.FC = () => {
         else filtered = all.filter(s => s.sender === account || s.receiver === account || s.courier === account);
 
         setShipments(filtered);
-    };
-    fetch();
-  }, [account, filter]);
+  };
+
+  const handleSellerDispatch = async (id: string) => {
+      setLoadingAction(id);
+      try {
+          await BlockchainService.dispatchShipment(id);
+          await fetchShipments(); // Refresh list
+      } catch (e) {
+          alert("Error: " + e);
+      } finally {
+          setLoadingAction(null);
+      }
+  }
 
   const StatusBadge = ({ status }: { status: ShipmentStatus }) => {
     const colors = {
@@ -128,9 +142,22 @@ export const ShipmentsPage: React.FC = () => {
                                     <StatusBadge status={s.status} />
                                 </td>
                                 <td className="px-6 py-4 text-right">
-                                    <Link to={`/tracking?id=${s.id}`} className="text-indigo-400 hover:text-indigo-300 text-xs font-bold border border-indigo-500/30 px-3 py-1.5 rounded hover:bg-indigo-500/20 transition-all">
-                                        Track
-                                    </Link>
+                                    <div className="flex items-center justify-end space-x-2">
+                                        {/* SELLER ACTION: SHIP ORDER */}
+                                        {userProfile?.role === UserRole.SELLER && s.status === ShipmentStatus.PENDING && s.sender === account ? (
+                                            <button 
+                                                onClick={() => handleSellerDispatch(s.id)}
+                                                disabled={loadingAction === s.id}
+                                                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center transition-all shadow-lg shadow-emerald-500/20"
+                                            >
+                                                {loadingAction === s.id ? 'Processing...' : <><Truck size={14} className="mr-1"/> Ship Order</>}
+                                            </button>
+                                        ) : (
+                                            <Link to={`/tracking?id=${s.id}`} className="text-indigo-400 hover:text-indigo-300 text-xs font-bold border border-indigo-500/30 px-3 py-1.5 rounded hover:bg-indigo-500/20 transition-all">
+                                                Track
+                                            </Link>
+                                        )}
+                                    </div>
                                 </td>
                             </tr>
                         ))}

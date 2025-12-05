@@ -1,4 +1,5 @@
-import { UserProfile, Shipment, KYCStatus, UserRole, ShipmentStatus, Notification, PaymentStatus, MarketplaceItem } from '../types';
+
+import { UserProfile, Shipment, UserRole, ShipmentStatus, Notification, PaymentStatus, MarketplaceItem, KYCStatus } from '../types';
 
 // Constants
 const STORAGE_KEY_USERS = 'chainflow_users';
@@ -116,7 +117,6 @@ export const registerUser = async (profile: UserProfile): Promise<UserProfile> =
         users.push(profile);
       }
       saveUsers(users);
-      createNotification(profile.walletAddress, "KYC Submitted", "Your KYC documents have been submitted for review.", "INFO");
       resolve(profile);
     }, MOCK_DELAY);
   });
@@ -166,6 +166,45 @@ export const createShipment = async (shipmentData: Omit<Shipment, 'id' | 'status
   });
 };
 
+// Seller dispatching the item
+export const dispatchShipment = async (id: string): Promise<Shipment> => {
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const shipments = getStoredShipments();
+            const idx = shipments.findIndex(s => s.id === id);
+            
+            if (idx === -1) {
+                reject("Shipment not found");
+                return;
+            }
+
+            const shipment = shipments[idx];
+            
+            // Validate Logic
+            if (shipment.status !== ShipmentStatus.PENDING) {
+                reject("Shipment is not in pending state");
+                return;
+            }
+
+            shipment.status = ShipmentStatus.IN_TRANSIT;
+            shipment.history.push({
+                status: ShipmentStatus.IN_TRANSIT,
+                location: 'Seller Warehouse',
+                message: 'Seller approved and dispatched package to Courier',
+                timestamp: Date.now()
+            });
+
+            saveShipments(shipments);
+
+            createNotification(shipment.receiver, "Order Shipped", `Your order ${shipment.title} has been shipped by the seller!`, "SUCCESS");
+            createNotification(shipment.courier, "Package Ready", `Package ${shipment.id} is ready for pickup at Seller location.`, "WARNING");
+            createNotification(shipment.sender, "Dispatch Confirmed", `You have approved order ${shipment.id}.`, "INFO");
+
+            resolve(shipment);
+        }, MOCK_DELAY);
+    });
+}
+
 export const updateShipmentStatus = async (id: string, status: ShipmentStatus, location: string, message: string): Promise<Shipment> => {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
@@ -183,11 +222,6 @@ export const updateShipmentStatus = async (id: string, status: ShipmentStatus, l
       if (status === ShipmentStatus.DELIVERED && shipment.paymentStatus === PaymentStatus.LOCKED) {
           const balances = getStoredBalances();
           // In the marketplace model, the 'price' goes to the Seller (who is the 'Sender' in the shipment struct).
-          // The Courier fee model is simplified here. 
-          // For MVP: If it's a marketplace order (Sender is Seller), funds go to Sender.
-          // If it's a P2P manual shipment (Sender paid), funds go to Courier? 
-          // Let's assume the 'price' is the item value + shipping.
-          // Marketplace Logic: Funds released to SELLER (Sender).
           
           const recipientAddress = shipment.sender; // Seller receives funds
           const currentBal = balances[recipientAddress] || 0;
@@ -331,7 +365,7 @@ export const purchaseItem = async (item: MarketplaceItem, buyerAddress: string):
                 // IMPORTANT: Linking Seller and Buyer
                 sender: item.seller, 
                 receiver: buyerAddress,
-                courier: '0x999...Courier', // Auto-assign for demo
+                courier: '0x999...Courier', // Auto-assign for demo or leave empty
                 
                 status: ShipmentStatus.PENDING,
                 paymentStatus: PaymentStatus.LOCKED,
@@ -341,7 +375,7 @@ export const purchaseItem = async (item: MarketplaceItem, buyerAddress: string):
                 history: [{
                     status: ShipmentStatus.PENDING,
                     timestamp: Date.now(),
-                    message: 'Order Placed. Funds Locked in Escrow.',
+                    message: 'Order Placed. Waiting for Seller Approval.',
                     location: 'Marketplace'
                 }]
             };
@@ -350,32 +384,40 @@ export const purchaseItem = async (item: MarketplaceItem, buyerAddress: string):
             saveShipments(shipments);
 
             createNotification(buyerAddress, "Order Confirmed", `You purchased ${item.title}. ${item.price} ETH locked in escrow.`, "SUCCESS");
-            createNotification(item.seller, "New Sale", `Order received for ${item.title}. Please prepare for shipping.`, "SUCCESS");
+            createNotification(item.seller, "New Sale", `Order received for ${item.title}. Please approve shipment.`, "SUCCESS");
             
             resolve(newShipment);
         }, MOCK_DELAY);
     });
 };
 
-// --- Admin Functions ---
+// --- Admin/User Management Functions ---
 
 export const getAllUsers = async (): Promise<UserProfile[]> => {
-    return new Promise((resolve) => {
-        setTimeout(() => resolve(getStoredUsers()), MOCK_DELAY / 2);
-    });
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(getStoredUsers());
+    }, MOCK_DELAY / 2);
+  });
 };
 
 export const verifyKYC = async (walletAddress: string, status: KYCStatus): Promise<void> => {
   return new Promise((resolve) => {
     setTimeout(() => {
-      const users = getStoredUsers();
-      const idx = users.findIndex(u => u.walletAddress === walletAddress);
-      if (idx >= 0) {
-        users[idx].kycStatus = status;
-        saveUsers(users);
-        createNotification(walletAddress, "KYC Update", `Your KYC status has been updated to ${status}.`, status === KYCStatus.VERIFIED ? "SUCCESS" : "ERROR");
-      }
-      resolve();
+        const users = getStoredUsers();
+        const idx = users.findIndex(u => u.walletAddress === walletAddress);
+        if (idx !== -1) {
+            users[idx].kycStatus = status;
+            saveUsers(users);
+            
+            // Send notification
+            const msg = status === KYCStatus.VERIFIED 
+                ? "Your KYC documents have been verified. You have full access."
+                : "Your KYC verification was rejected. Please check your documents.";
+            const type = status === KYCStatus.VERIFIED ? "SUCCESS" : "ERROR";
+            createNotification(walletAddress, "KYC Status Update", msg, type);
+        }
+        resolve();
     }, MOCK_DELAY);
   });
 };
@@ -384,12 +426,6 @@ export const verifyKYC = async (walletAddress: string, status: KYCStatus): Promi
 
 export const getNotifications = (walletAddress: string): Notification[] => {
     return getStoredNotifications().filter(n => true).sort((a,b) => b.timestamp - a.timestamp); 
-    // In real app, filter by recipient. Here we mock shared for demo simplicity or filter properly
-    // Note: createNotification saves blindly. 
-    // Let's filter by ownership logic in a real backend, but here local storage is shared. 
-    // We will assume 'getNotifications' returns all for the demo user unless we store recipient in notification struct.
-    // The current Notification struct doesn't have recipient. 
-    // For this Mock, we will just return all.
 };
 
 const createNotification = (recipient: string, title: string, message: string, type: Notification['type']) => {

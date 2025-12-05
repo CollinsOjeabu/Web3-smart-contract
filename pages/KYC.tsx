@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useWeb3 } from '../context/Web3Context';
-import { KYCStatus, UserProfile } from '../types';
+import { KYCStatus, UserProfile, UserRole } from '../types';
 import * as BlockchainService from '../services/blockchain';
 import { ShieldCheck, Upload, AlertCircle, CheckCircle, Clock, Lock } from 'lucide-react';
 
@@ -37,7 +37,7 @@ export const KYCPage: React.FC = () => {
         walletAddress: account,
         name: formData.name,
         email: formData.email,
-        role: userProfile?.role || 'USER', 
+        role: userProfile?.role || UserRole.BUYER, 
         kycStatus: KYCStatus.PENDING,
         kycDocuments: {
             idDoc: 'ipfs://QmHash1...',

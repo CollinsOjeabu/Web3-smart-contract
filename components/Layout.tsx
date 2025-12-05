@@ -1,12 +1,10 @@
+
 import React, { useState } from 'react';
 import { useWeb3 } from '../context/Web3Context';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Package, 
-  Send, 
-  ShieldCheck, 
-  Settings, 
   Menu, 
   X, 
   Wallet,
@@ -48,7 +46,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const getRoleLabel = () => {
     if(!userProfile) return 'Guest';
     switch(userProfile.role) {
-        case UserRole.ADMIN: return 'Administrator';
         case UserRole.SELLER: return 'Merchant / Seller';
         case UserRole.COURIER: return 'Logistics Partner';
         case UserRole.BUYER: return 'Customer';
@@ -104,18 +101,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 <NavItem path="/tracking" icon={Search} label="Update Status" />
              </>
           )}
-
-          {/* Common: KYC */}
-          <NavItem path="/kyc" icon={ShieldCheck} label="KYC Verification" />
-
-          {/* Role: ADMIN */}
-          {userProfile?.role === UserRole.ADMIN && (
-             <div className="pt-6 mt-4 border-t border-white/5">
-                <p className="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Administrator</p>
-                <NavItem path="/admin" icon={Settings} label="Admin Console" />
-                <NavItem path="/shipments" icon={Package} label="All Shipments" />
-             </div>
-          )}
         </nav>
 
         {/* Dev Tools for Role Switching */}
@@ -129,11 +114,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     <span className="text-[10px] bg-white/5 text-slate-300 px-2 py-0.5 rounded border border-white/5">DevMode</span>
                 </div>
                 
-                <div className="grid grid-cols-4 gap-1 p-1 bg-black/20 rounded-lg">
+                <div className="grid grid-cols-3 gap-1 p-1 bg-black/20 rounded-lg">
                     <button onClick={() => setDevRole(UserRole.BUYER)} title="Buyer" className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.BUYER ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>Buy</button>
                     <button onClick={() => setDevRole(UserRole.SELLER)} title="Seller" className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.SELLER ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-white'}`}>Sell</button>
                     <button onClick={() => setDevRole(UserRole.COURIER)} title="Courier" className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.COURIER ? 'bg-orange-600 text-white' : 'text-slate-500 hover:text-white'}`}>Del</button>
-                    <button onClick={() => setDevRole(UserRole.ADMIN)} title="Admin" className={`text-[10px] py-1.5 rounded font-medium transition-colors ${userProfile?.role === UserRole.ADMIN ? 'bg-red-600 text-white' : 'text-slate-500 hover:text-white'}`}>Adm</button>
                 </div>
             </div>
         )}

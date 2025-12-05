@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Web3Provider } from './context/Web3Context';
@@ -8,8 +9,6 @@ import { Dashboard } from './pages/Dashboard';
 import { ShipmentsPage } from './pages/Shipments';
 import { CreateShipment } from './pages/CreateShipment';
 import { TrackingPage } from './pages/Tracking';
-import { KYCPage } from './pages/KYC';
-import { AdminPage } from './pages/Admin';
 import { Catalog } from './pages/Catalog';
 import { SellerStudio } from './pages/SellerStudio';
 
@@ -24,8 +23,6 @@ const App: React.FC = () => {
             <Route path="/shipments" element={<ShipmentsPage />} />
             <Route path="/create" element={<CreateShipment />} />
             <Route path="/tracking" element={<TrackingPage />} />
-            <Route path="/kyc" element={<KYCPage />} />
-            <Route path="/admin" element={<AdminPage />} />
             <Route path="/seller-studio" element={<SellerStudio />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
