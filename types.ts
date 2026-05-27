@@ -33,6 +33,8 @@ export interface UserProfile {
   walletAddress: string;
   name: string;
   email: string;
+  phone?: string;
+  address?: string;
   role: UserRole;
   kycStatus?: KYCStatus;
   kycDocuments?: {

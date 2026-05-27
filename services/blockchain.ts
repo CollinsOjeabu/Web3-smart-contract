@@ -1,448 +1,337 @@
+import { ethers } from 'ethers';
+import { CONFIG } from '../config';
+import KYCRegistryArtifact from './abis/KYCRegistry.json';
+import SupplyChainEscrowArtifact from './abis/SupplyChainEscrow.json';
+import MarketplaceContractArtifact from './abis/MarketplaceContract.json';
+import { UserProfile, Shipment, KYCStatus, UserRole, ShipmentStatus, Notification, PaymentStatus, MarketplaceItem } from '../types';
 
-import { UserProfile, Shipment, UserRole, ShipmentStatus, Notification, PaymentStatus, MarketplaceItem, KYCStatus } from '../types';
+// Types for Window.ethereum
+declare global {
+  interface Window {
+    ethereum: any;
+  }
+}
 
-// Constants
-const STORAGE_KEY_USERS = 'chainflow_users';
-const STORAGE_KEY_SHIPMENTS = 'chainflow_shipments';
+// --- Helpers ---
+
+const getProvider = () => {
+  if (!window.ethereum) throw new Error("No crypto wallet found. Please install MetaMask.");
+  return new ethers.BrowserProvider(window.ethereum);
+};
+
+const getSigner = async () => {
+  const provider = getProvider();
+  return await provider.getSigner();
+};
+
+const getContract = async (address: string, abi: any, withSigner = false) => {
+  if (withSigner) {
+    const signer = await getSigner();
+    return new ethers.Contract(address, abi, signer);
+  }
+  const provider = getProvider();
+  return new ethers.Contract(address, abi, provider);
+};
+
+// --- Auth & Wallet ---
+
+export const connectWallet = async (): Promise<string> => {
+  const provider = getProvider();
+  const accounts = await provider.send("eth_requestAccounts", []);
+
+  // Switch to Sepolia if needed
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: '0x' + CONFIG.SEPOLIA_CHAIN_ID.toString(16) }],
+    });
+  } catch (switchError: any) {
+    // This error code indicates that the chain has not been added to MetaMask.
+    if (switchError.code === 4902) {
+      // Add Sepolia (usually exists by default, but good practice)
+      // For now, we assume user has Sepolia or can add it manually if this fails
+      console.warn("Sepolia network not found in wallet");
+    }
+  }
+
+  return accounts[0];
+};
+
+export const getBalance = async (walletAddress: string): Promise<number> => {
+  const provider = getProvider();
+  const balance = await provider.getBalance(walletAddress);
+  return parseFloat(ethers.formatEther(balance));
+};
+
+// --- KYC Registry ---
+
+export const getUserProfile = async (walletAddress: string): Promise<UserProfile | null> => {
+  try {
+    const contract = await getContract(CONFIG.KYC_CONTRACT_ADDRESS, KYCRegistryArtifact.abi);
+
+    // Check if admin first (fallback/override)
+    let isAdmin = false;
+    try {
+      isAdmin = await contract.isAdmin(walletAddress);
+    } catch (e) {
+      console.warn("Failed to check isAdmin", e);
+    }
+
+    const profile = await contract.getUserProfile(walletAddress);
+
+    if (!profile.exists) {
+      // If not in registry but IS an admin, return a mock admin profile.
+      if (isAdmin) {
+        return {
+          walletAddress: walletAddress,
+          name: "Admin",
+          email: "admin@chainflow.com",
+          role: UserRole.ADMIN,
+          kycStatus: KYCStatus.VERIFIED
+        };
+      }
+      return null;
+    }
+
+    // Force role to ADMIN if contract says so
+    const role = isAdmin ? UserRole.ADMIN : Number(profile.role) as UserRole;
+
+    // Fetch off-chain data (simulated)
+    const storedData = localStorage.getItem(`chainflow_user_data_${walletAddress.toLowerCase()}`);
+    const offChainProfile = storedData ? JSON.parse(storedData) : {};
+
+    return {
+      walletAddress: walletAddress,
+      name: profile.name,
+      email: profile.email,
+      role: role,
+      kycStatus: Number(profile.kycStatus) as KYCStatus,
+      // Merge off-chain data
+      phone: offChainProfile.phone,
+      address: offChainProfile.address,
+      kycDocuments: offChainProfile.kycDocuments
+    } as UserProfile;
+  } catch (error) {
+    console.error("Error fetching user profile:", error);
+    return null;
+  }
+};
+
+export const registerUser = async (profile: UserProfile, onTxHash?: (hash: string) => void): Promise<UserProfile> => {
+  const contract = await getContract(CONFIG.KYC_CONTRACT_ADDRESS, KYCRegistryArtifact.abi, true);
+  const tx = await contract.submitKYC(profile.name, profile.email);
+  if (onTxHash) onTxHash(tx.hash);
+
+  // Save extended details to LocalStorage (Phone, Address, Docs)
+  const offChainData = {
+    phone: profile.phone,
+    address: profile.address,
+    kycDocuments: profile.kycDocuments
+  };
+  localStorage.setItem(`chainflow_user_data_${profile.walletAddress.toLowerCase()}`, JSON.stringify(offChainData));
+
+  await tx.wait();
+  return profile;
+};
+
+// --- Shipments (Escrow) ---
+
+export const createShipment = async (shipmentData: Omit<Shipment, 'id' | 'status' | 'createdAt' | 'history' | 'paymentStatus'>): Promise<Shipment> => {
+  const contract = await getContract(CONFIG.ESCROW_CONTRACT_ADDRESS, SupplyChainEscrowArtifact.abi, true);
+
+  const priceInWei = ethers.parseEther(shipmentData.price.toString());
+
+  const tx = await contract.createShipment(
+    shipmentData.receiver,
+    shipmentData.courier,
+    shipmentData.title,
+    shipmentData.description,
+    shipmentData.category,
+    { value: priceInWei }
+  );
+
+  const receipt = await tx.wait();
+
+  return {
+    ...shipmentData,
+    id: "PENDING_CONFIRMATION", // In a real app, parse logs for ID
+    status: ShipmentStatus.PENDING,
+    paymentStatus: PaymentStatus.LOCKED,
+    createdAt: Date.now(),
+    history: []
+  } as Shipment;
+};
+
+export const getAllShipments = async (): Promise<Shipment[]> => {
+  try {
+    const contract = await getContract(CONFIG.ESCROW_CONTRACT_ADDRESS, SupplyChainEscrowArtifact.abi);
+    const shipmentIds = await contract.getAllShipments();
+
+    const shipments: Shipment[] = [];
+
+    for (const id of shipmentIds) {
+      const s = await contract.getShipment(id);
+      if (s.exists) {
+        shipments.push({
+          id: s.id.toString(),
+          sender: s.sender,
+          receiver: s.receiver,
+          courier: s.courier,
+          title: s.title,
+          description: s.description,
+          category: s.category,
+          price: parseFloat(ethers.formatEther(s.price)),
+          status: Number(s.status) as ShipmentStatus,
+          paymentStatus: Number(s.paymentStatus) as PaymentStatus,
+          createdAt: Number(s.createdAt) * 1000,
+          deliveryDate: s.deliveredAt > 0 ? new Date(Number(s.deliveredAt) * 1000).toISOString() : undefined,
+          history: []
+        });
+      }
+    }
+    return shipments;
+  } catch (error) {
+    console.error("Error fetching shipments:", error);
+    return [];
+  }
+};
+
+export const updateShipmentStatus = async (id: string, status: ShipmentStatus, location: string, message: string): Promise<void> => {
+  const contract = await getContract(CONFIG.ESCROW_CONTRACT_ADDRESS, SupplyChainEscrowArtifact.abi, true);
+  const tx = await contract.updateShipmentStatus(id, status, location, message);
+  await tx.wait();
+};
+
+// --- Marketplace ---
+
+export const getMarketplaceItems = async (): Promise<MarketplaceItem[]> => {
+  try {
+    const contract = await getContract(CONFIG.MARKETPLACE_CONTRACT_ADDRESS, MarketplaceContractArtifact.abi);
+    const items = await contract.getAllItems();
+
+    return items.filter((i: any) => i.isAvailable).map((i: any) => ({
+      id: i.id.toString(),
+      title: i.title,
+      description: i.description,
+      price: parseFloat(ethers.formatEther(i.price)),
+      category: i.category,
+      image: i.imageURI,
+      seller: i.seller,
+      isAvailable: i.isAvailable
+    }));
+  } catch (error) {
+    console.error("Error fetching marketplace items:", error);
+    return [];
+  }
+};
+
+export const purchaseItem = async (item: MarketplaceItem, buyerAddress: string): Promise<void> => {
+  const contract = await getContract(CONFIG.MARKETPLACE_CONTRACT_ADDRESS, MarketplaceContractArtifact.abi, true);
+  const priceInWei = ethers.parseEther(item.price.toString());
+
+  const tx = await contract.purchaseItem(item.id, { value: priceInWei });
+  await tx.wait();
+};
+
+export const addMarketplaceItem = async (item: Omit<MarketplaceItem, 'id'>): Promise<void> => {
+  const contract = await getContract(CONFIG.MARKETPLACE_CONTRACT_ADDRESS, MarketplaceContractArtifact.abi, true);
+  const priceInWei = ethers.parseEther(item.price.toString());
+
+  const tx = await contract.listItem(
+    item.title,
+    item.description,
+    priceInWei,
+    item.category,
+    item.image || ""
+  );
+  await tx.wait();
+};
+
+export const deleteMarketplaceItem = async (id: string, sellerAddr: string): Promise<void> => {
+  const contract = await getContract(CONFIG.MARKETPLACE_CONTRACT_ADDRESS, MarketplaceContractArtifact.abi, true);
+  const tx = await contract.removeItem(id);
+  await tx.wait();
+};
+
+// --- Notifications ---
+
 const STORAGE_KEY_NOTIFICATIONS = 'chainflow_notifications';
-const STORAGE_KEY_BALANCES = 'chainflow_balances';
-const STORAGE_KEY_CATALOG = 'chainflow_catalog';
-const MOCK_DELAY = 600; // Simulate network latency
 
-// Helper to generate IDs
-const generateId = () => Math.random().toString(36).substr(2, 9).toUpperCase();
-
-// --- Local Storage Helpers ---
-const getStoredUsers = (): UserProfile[] => {
-  const data = localStorage.getItem(STORAGE_KEY_USERS);
-  return data ? JSON.parse(data) : [];
-};
-
-const saveUsers = (users: UserProfile[]) => {
-  localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
-};
-
-const getStoredShipments = (): Shipment[] => {
-  const data = localStorage.getItem(STORAGE_KEY_SHIPMENTS);
-  return data ? JSON.parse(data) : [];
-};
-
-const saveShipments = (shipments: Shipment[]) => {
-  localStorage.setItem(STORAGE_KEY_SHIPMENTS, JSON.stringify(shipments));
-};
-
-const getStoredNotifications = (): Notification[] => {
+export const getNotifications = (walletAddress: string): Notification[] => {
   const data = localStorage.getItem(STORAGE_KEY_NOTIFICATIONS);
   return data ? JSON.parse(data) : [];
 };
 
-const saveNotifications = (notes: Notification[]) => {
+export const createLocalNotification = (title: string, message: string, type: Notification['type']) => {
+  const notes = getNotifications(""); // Get all
+  notes.push({
+    id: Math.random().toString(36).substr(2, 9),
+    title,
+    message,
+    timestamp: Date.now(),
+    read: false,
+    type
+  });
   localStorage.setItem(STORAGE_KEY_NOTIFICATIONS, JSON.stringify(notes));
 };
 
-const getStoredBalances = (): Record<string, number> => {
-    const data = localStorage.getItem(STORAGE_KEY_BALANCES);
-    return data ? JSON.parse(data) : {};
-};
-
-const saveBalances = (balances: Record<string, number>) => {
-    localStorage.setItem(STORAGE_KEY_BALANCES, JSON.stringify(balances));
-};
-
-const getStoredCatalog = (): MarketplaceItem[] => {
-    const data = localStorage.getItem(STORAGE_KEY_CATALOG);
-    // Return mock data if empty
-    if (!data) return MOCK_CATALOG;
-    return JSON.parse(data);
-};
-
-const saveCatalog = (items: MarketplaceItem[]) => {
-    localStorage.setItem(STORAGE_KEY_CATALOG, JSON.stringify(items));
-};
-
-// --- Mock Service Methods ---
-
-export const connectWallet = async (): Promise<string> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // Simulate connecting a random wallet if not exists, or returning existing
-      const stored = localStorage.getItem('chainflow_active_wallet');
-      let wallet = stored;
-      
-      if (!wallet) {
-        wallet = `0x${generateId()}${generateId()}...`;
-        localStorage.setItem('chainflow_active_wallet', wallet);
-      }
-
-      // Initialize balance if new
-      const balances = getStoredBalances();
-      if (!balances[wallet]) {
-          balances[wallet] = 100.000; // Give new users 100 ETH testnet funds
-          saveBalances(balances);
-      }
-
-      resolve(wallet);
-    }, MOCK_DELAY);
-  });
-};
-
-export const getBalance = async (walletAddress: string): Promise<number> => {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            const balances = getStoredBalances();
-            resolve(balances[walletAddress] || 0);
-        }, MOCK_DELAY / 2);
-    });
-};
-
-export const getUserProfile = async (walletAddress: string): Promise<UserProfile | null> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const users = getStoredUsers();
-      const user = users.find(u => u.walletAddress === walletAddress);
-      resolve(user || null);
-    }, MOCK_DELAY / 2);
-  });
-};
-
-export const registerUser = async (profile: UserProfile): Promise<UserProfile> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const users = getStoredUsers();
-      const existingIndex = users.findIndex(u => u.walletAddress === profile.walletAddress);
-      
-      if (existingIndex >= 0) {
-        users[existingIndex] = profile;
-      } else {
-        users.push(profile);
-      }
-      saveUsers(users);
-      resolve(profile);
-    }, MOCK_DELAY);
-  });
-};
-
-// Used for P2P shipment creation (Manual)
-export const createShipment = async (shipmentData: Omit<Shipment, 'id' | 'status' | 'createdAt' | 'history' | 'paymentStatus'>): Promise<Shipment> => {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      // 1. Check Balance
-      const balances = getStoredBalances();
-      const senderBalance = balances[shipmentData.sender] || 0;
-      
-      if (senderBalance < shipmentData.price) {
-          reject("Insufficient ETH balance to fund smart contract.");
-          return;
-      }
-
-      // 2. Deduct Funds (Lock in Contract)
-      balances[shipmentData.sender] = senderBalance - shipmentData.price;
-      saveBalances(balances);
-
-      const shipments = getStoredShipments();
-      const newShipment: Shipment = {
-        ...shipmentData,
-        id: `SHP-${generateId()}`,
-        status: ShipmentStatus.PENDING,
-        paymentStatus: PaymentStatus.LOCKED,
-        createdAt: Date.now(),
-        history: [{
-          status: ShipmentStatus.PENDING,
-          timestamp: Date.now(),
-          message: 'Smart Contract Initialized & Funds Locked',
-          location: 'Origin'
-        }]
-      };
-      shipments.push(newShipment);
-      saveShipments(shipments);
-      
-      // Notify participants
-      createNotification(shipmentData.sender, "Contract Created", `Shipment ${newShipment.id} created. ${shipmentData.price} ETH locked in escrow.`, "SUCCESS");
-      createNotification(shipmentData.receiver, "Incoming Shipment", `You have a new incoming shipment ${newShipment.id}.`, "INFO");
-      createNotification(shipmentData.courier, "New Assignment", `Shipment ${newShipment.id} assigned. Reward: ${shipmentData.price} ETH upon delivery.`, "WARNING");
-      
-      resolve(newShipment);
-    }, MOCK_DELAY);
-  });
-};
-
-// Seller dispatching the item
-export const dispatchShipment = async (id: string): Promise<Shipment> => {
-    return new Promise((resolve, reject) => {
-        setTimeout(() => {
-            const shipments = getStoredShipments();
-            const idx = shipments.findIndex(s => s.id === id);
-            
-            if (idx === -1) {
-                reject("Shipment not found");
-                return;
-            }
-
-            const shipment = shipments[idx];
-            
-            // Validate Logic
-            if (shipment.status !== ShipmentStatus.PENDING) {
-                reject("Shipment is not in pending state");
-                return;
-            }
-
-            shipment.status = ShipmentStatus.IN_TRANSIT;
-            shipment.history.push({
-                status: ShipmentStatus.IN_TRANSIT,
-                location: 'Seller Warehouse',
-                message: 'Seller approved and dispatched package to Courier',
-                timestamp: Date.now()
-            });
-
-            saveShipments(shipments);
-
-            createNotification(shipment.receiver, "Order Shipped", `Your order ${shipment.title} has been shipped by the seller!`, "SUCCESS");
-            createNotification(shipment.courier, "Package Ready", `Package ${shipment.id} is ready for pickup at Seller location.`, "WARNING");
-            createNotification(shipment.sender, "Dispatch Confirmed", `You have approved order ${shipment.id}.`, "INFO");
-
-            resolve(shipment);
-        }, MOCK_DELAY);
-    });
-}
-
-export const updateShipmentStatus = async (id: string, status: ShipmentStatus, location: string, message: string): Promise<Shipment> => {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      const shipments = getStoredShipments();
-      const idx = shipments.findIndex(s => s.id === id);
-      if (idx === -1) {
-        reject("Shipment not found");
-        return;
-      }
-      
-      const shipment = shipments[idx];
-      let paymentMessage = "";
-
-      // Smart Contract Logic: Release Funds on Delivery
-      if (status === ShipmentStatus.DELIVERED && shipment.paymentStatus === PaymentStatus.LOCKED) {
-          const balances = getStoredBalances();
-          // In the marketplace model, the 'price' goes to the Seller (who is the 'Sender' in the shipment struct).
-          
-          const recipientAddress = shipment.sender; // Seller receives funds
-          const currentBal = balances[recipientAddress] || 0;
-          balances[recipientAddress] = currentBal + shipment.price;
-          saveBalances(balances);
-
-          shipment.paymentStatus = PaymentStatus.RELEASED;
-          paymentMessage = ` | Smart Contract: ${shipment.price} ETH released to Seller.`;
-          createNotification(shipment.sender, "Funds Released", `Shipment delivered! ${shipment.price} ETH released to your wallet.`, "SUCCESS");
-          createNotification(shipment.courier, "Delivery Confirmed", `Delivery recorded successfully.`, "SUCCESS");
-      }
-
-      // Smart Contract Logic: Refund Funds on Cancellation
-      if (status === ShipmentStatus.CANCELLED && shipment.paymentStatus === PaymentStatus.LOCKED) {
-        const balances = getStoredBalances();
-        // Refund the Buyer (Receiver)
-        const recipientAddress = shipment.receiver;
-        const currentBal = balances[recipientAddress] || 0;
-        
-        balances[recipientAddress] = currentBal + shipment.price;
-        saveBalances(balances);
-
-        shipment.paymentStatus = PaymentStatus.REFUNDED;
-        paymentMessage = ` | Smart Contract: ${shipment.price} ETH refunded to Buyer.`;
-        createNotification(shipment.receiver, "Funds Refunded", `Order cancelled. ${shipment.price} ETH refunded to your wallet.`, "WARNING");
-      }
-
-      shipment.status = status;
-      shipment.history.push({
-        status,
-        location,
-        message: message + paymentMessage,
-        timestamp: Date.now()
-      });
-      
-      saveShipments(shipments);
-      
-      // Notifications
-      createNotification(shipment.sender, "Shipment Update", `Shipment ${id} is now ${status}.${paymentMessage}`, "INFO");
-      createNotification(shipment.receiver, "Shipment Update", `Shipment ${id} is now ${status}.`, "INFO");
-      
-      resolve(shipment);
-    }, MOCK_DELAY);
-  });
-};
-
-export const getAllShipments = async (): Promise<Shipment[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(getStoredShipments());
-    }, MOCK_DELAY / 2);
-  });
-};
-
-// --- Marketplace Functions ---
-
-const MOCK_CATALOG: MarketplaceItem[] = [
-    {
-        id: 'ITM-001',
-        title: 'Premium Wireless Headphones',
-        description: 'Noise cancelling, 40h battery life, premium sound quality.',
-        price: 0.15,
-        category: 'Electronics',
-        image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&q=80',
-        seller: '0xDEMO...SELLER'
-    },
-    {
-        id: 'ITM-002',
-        title: 'Mechanical Keyboard',
-        description: 'RGB Backlit, Blue Switches, compact 60% layout.',
-        price: 0.08,
-        category: 'Electronics',
-        image: 'https://images.unsplash.com/photo-1587829741301-dc798b91add1?w=500&q=80',
-        seller: '0xDEMO...SELLER'
-    },
-    {
-        id: 'ITM-005',
-        title: 'Limited Edition Sneakers',
-        description: 'Size 10, never worn, authentic collector item.',
-        price: 0.5,
-        category: 'Fashion',
-        image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500&q=80',
-        seller: '0xDEMO...SELLER'
-    }
-];
-
-export const getMarketplaceItems = async (): Promise<MarketplaceItem[]> => {
-    return new Promise(resolve => setTimeout(() => resolve(getStoredCatalog()), MOCK_DELAY/2));
-};
-
-export const addMarketplaceItem = async (item: Omit<MarketplaceItem, 'id'>): Promise<MarketplaceItem> => {
-    return new Promise(resolve => {
-        setTimeout(() => {
-            const catalog = getStoredCatalog();
-            const newItem = { ...item, id: `ITM-${generateId()}` };
-            catalog.push(newItem);
-            saveCatalog(catalog);
-            createNotification(item.seller, "Item Listed", `${item.title} is now live in the marketplace.`, "SUCCESS");
-            resolve(newItem);
-        }, MOCK_DELAY);
-    });
-};
-
-export const deleteMarketplaceItem = async (id: string, sellerAddr: string): Promise<void> => {
-    return new Promise(resolve => {
-        setTimeout(() => {
-            const catalog = getStoredCatalog();
-            const filtered = catalog.filter(i => i.id !== id);
-            saveCatalog(filtered);
-            createNotification(sellerAddr, "Item Removed", `Item removed from marketplace.`, "INFO");
-            resolve();
-        }, MOCK_DELAY);
-    });
-};
-
-export const purchaseItem = async (item: MarketplaceItem, buyerAddress: string): Promise<Shipment> => {
-    return new Promise((resolve, reject) => {
-        setTimeout(() => {
-            const balances = getStoredBalances();
-            const buyerBalance = balances[buyerAddress] || 0;
-
-            if (buyerBalance < item.price) {
-                reject("Insufficient funds");
-                return;
-            }
-
-            // Deduct from Buyer
-            balances[buyerAddress] = buyerBalance - item.price;
-            saveBalances(balances);
-
-            // Create Shipment automatically
-            const shipments = getStoredShipments();
-            const newShipment: Shipment = {
-                id: `ORD-${generateId()}`,
-                title: `Order: ${item.title}`,
-                description: item.description,
-                category: item.category,
-                weight: 1.0, // Default for demo
-                price: item.price,
-                
-                // IMPORTANT: Linking Seller and Buyer
-                sender: item.seller, 
-                receiver: buyerAddress,
-                courier: '0x999...Courier', // Auto-assign for demo or leave empty
-                
-                status: ShipmentStatus.PENDING,
-                paymentStatus: PaymentStatus.LOCKED,
-                pickupDate: new Date().toISOString().split('T')[0],
-                deliveryDate: new Date(Date.now() + 86400000*3).toISOString().split('T')[0],
-                createdAt: Date.now(),
-                history: [{
-                    status: ShipmentStatus.PENDING,
-                    timestamp: Date.now(),
-                    message: 'Order Placed. Waiting for Seller Approval.',
-                    location: 'Marketplace'
-                }]
-            };
-
-            shipments.push(newShipment);
-            saveShipments(shipments);
-
-            createNotification(buyerAddress, "Order Confirmed", `You purchased ${item.title}. ${item.price} ETH locked in escrow.`, "SUCCESS");
-            createNotification(item.seller, "New Sale", `Order received for ${item.title}. Please approve shipment.`, "SUCCESS");
-            
-            resolve(newShipment);
-        }, MOCK_DELAY);
-    });
-};
-
-// --- Admin/User Management Functions ---
-
-export const getAllUsers = async (): Promise<UserProfile[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(getStoredUsers());
-    }, MOCK_DELAY / 2);
-  });
-};
+// --- Admin ---
 
 export const verifyKYC = async (walletAddress: string, status: KYCStatus): Promise<void> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-        const users = getStoredUsers();
-        const idx = users.findIndex(u => u.walletAddress === walletAddress);
-        if (idx !== -1) {
-            users[idx].kycStatus = status;
-            saveUsers(users);
-            
-            // Send notification
-            const msg = status === KYCStatus.VERIFIED 
-                ? "Your KYC documents have been verified. You have full access."
-                : "Your KYC verification was rejected. Please check your documents.";
-            const type = status === KYCStatus.VERIFIED ? "SUCCESS" : "ERROR";
-            createNotification(walletAddress, "KYC Status Update", msg, type);
-        }
-        resolve();
-    }, MOCK_DELAY);
-  });
+  const contract = await getContract(CONFIG.KYC_CONTRACT_ADDRESS, KYCRegistryArtifact.abi, true);
+
+  if (status === KYCStatus.VERIFIED) {
+    // Default to BUYER role for now. In a real app, Admin might select the role.
+    const tx = await contract.verifyKYC(walletAddress, UserRole.BUYER);
+    await tx.wait();
+  } else {
+    const tx = await contract.rejectKYC(walletAddress, "Admin rejected");
+    await tx.wait();
+  }
 };
 
-// --- Notification System ---
+export const getAllUsers = async (): Promise<UserProfile[]> => {
+  try {
+    const contract = await getContract(CONFIG.KYC_CONTRACT_ADDRESS, KYCRegistryArtifact.abi);
+    const provider = getProvider();
 
-export const getNotifications = (walletAddress: string): Notification[] => {
-    return getStoredNotifications().filter(n => true).sort((a,b) => b.timestamp - a.timestamp); 
+    // Pagination to avoid RPC limits
+    const currentBlock = await provider.getBlockNumber();
+    const BLOCK_CHUNK = 200;
+    const MAX_BLOCKS = 50000; // Look back approx 1 week
+    const fromBlockLimit = Math.max(0, currentBlock - MAX_BLOCKS);
+
+    const filter = contract.filters.KYCSubmitted();
+    const uniqueAddresses = new Set<string>();
+
+    // Fetch in chunks
+    for (let to = currentBlock; to > fromBlockLimit; to -= BLOCK_CHUNK) {
+      const from = Math.max(fromBlockLimit, to - BLOCK_CHUNK);
+      try {
+        const events = await contract.queryFilter(filter, from, to);
+        events.forEach((event: any) => {
+          if (event.args && event.args[0]) {
+            uniqueAddresses.add(event.args[0]);
+          }
+        });
+      } catch (e) {
+        console.warn(`Error fetching events for range ${from}-${to}:`, e);
+        // Continue to next chunk even if one fails
+      }
+    }
+
+    const profiles: UserProfile[] = [];
+
+    for (const address of uniqueAddresses) {
+      const profile = await getUserProfile(address);
+      if (profile) {
+        profiles.push(profile);
+      }
+    }
+
+    return profiles;
+  } catch (error) {
+    console.error("Error fetching all users:", error);
+    return [];
+  }
 };
-
-const createNotification = (recipient: string, title: string, message: string, type: Notification['type']) => {
-    const notes = getStoredNotifications();
-    notes.push({
-        id: generateId(),
-        title,
-        message,
-        timestamp: Date.now(),
-        read: false,
-        type
-    });
-    saveNotifications(notes);
-};
-
-// --- Dev Tools ---
-export const clearStorage = () => {
-    localStorage.clear();
-    window.location.reload();
-}

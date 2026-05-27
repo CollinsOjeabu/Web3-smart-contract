@@ -1,0 +1,19 @@
+{
+    "name": "chainflow-contracts",
+    "version": "1.0.0",
+    "description": "Smart contracts for ChainFlow supply chain",
+    "main": "index.js",
+    "scripts": {
+        "test": "hardhat test",
+        "compile": "hardhat compile",
+        "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "MIT",
+    "devDependencies": {
+        "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+        "hardhat": "^2.22.0",
+        "dotenv": "^16.4.0"
+    }
+}

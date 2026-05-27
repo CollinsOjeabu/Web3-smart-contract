@@ -1,7 +1,6 @@
-
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import * as BlockchainService from '../services/blockchain';
-import { UserProfile, UserRole, Notification } from '../types';
+import { UserProfile, UserRole, KYCStatus, Notification } from '../types';
 
 interface Web3ContextType {
   account: string | null;
@@ -13,8 +12,6 @@ interface Web3ContextType {
   connect: () => Promise<void>;
   disconnect: () => void;
   refreshData: () => Promise<void>;
-  // Dev only
-  setDevRole: (role: UserRole) => void; 
 }
 
 const Web3Context = createContext<Web3ContextType | undefined>(undefined);
@@ -26,39 +23,33 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Dev state to force a role without real auth
-  const [devRoleOverride, setDevRoleOverride] = useState<UserRole | null>(null);
-
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     if (!account) return;
     setIsLoading(true);
     try {
       let profile = await BlockchainService.getUserProfile(account);
       const bal = await BlockchainService.getBalance(account);
       setBalance(bal);
-      
+
       // If user doesn't exist yet, create a partial one for UI state
       if (!profile) {
         profile = {
-            walletAddress: account,
-            name: 'New User',
-            email: '',
-            role: UserRole.BUYER // Default to Buyer
+          walletAddress: account,
+          name: '',
+          email: '',
+          role: UserRole.BUYER, // Default to Buyer view until registered
+          kycStatus: KYCStatus.NOT_STARTED
         };
-      }
-
-      if (devRoleOverride) {
-        profile.role = devRoleOverride;
       }
 
       setUserProfile(profile);
       setNotifications(BlockchainService.getNotifications(account));
     } catch (e) {
-      console.error(e);
+      console.error("Error refreshing data:", e);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [account]);
 
   const connect = async () => {
     setIsLoading(true);
@@ -77,14 +68,47 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserProfile(null);
     setNotifications([]);
     setBalance(0);
-    setDevRoleOverride(null);
   };
+
+  // Listen for account changes
+  useEffect(() => {
+    if (window.ethereum) {
+      const handleAccountsChanged = (accounts: string[]) => {
+        if (accounts.length > 0) {
+          setAccount(accounts[0]);
+        } else {
+          disconnect();
+        }
+      };
+
+      const handleChainChanged = () => {
+        window.location.reload();
+      };
+
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      window.ethereum.on('chainChanged', handleChainChanged);
+
+      // Check if already connected
+      window.ethereum.request({ method: 'eth_accounts' }).then((accounts: string[]) => {
+        if (accounts.length > 0) {
+          setAccount(accounts[0]);
+        }
+      });
+
+      return () => {
+        if (window.ethereum.removeListener) {
+          window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+          window.ethereum.removeListener('chainChanged', handleChainChanged);
+        }
+      };
+    }
+  }, []);
 
   useEffect(() => {
     if (account) {
       refreshData();
     }
-  }, [account, devRoleOverride]);
+  }, [account, refreshData]);
 
   return (
     <Web3Context.Provider value={{
@@ -97,7 +121,6 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
       connect,
       disconnect,
       refreshData,
-      setDevRole: setDevRoleOverride
     }}>
       {children}
     </Web3Context.Provider>
